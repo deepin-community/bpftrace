@@ -1,0 +1,3 @@
+# We need to keep BEGIN/END_trigger symbols
+bpftrace: unstripped-binary-or-object [usr/bin/bpftrace]
+bpftrace: unstripped-binary-or-object [usr/bin/bpftrace-aotrt]
