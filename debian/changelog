@@ -1,3 +1,9 @@
+bpftrace (0.19.0-1deepin1) unstable; urgency=medium
+
+  * Modify llvm-14 to llvm-16
+
+ -- bluesky <chenchongbiao@deepin.org>  Thu, 01 Feb 2024 09:45:21 +0800
+
 bpftrace (0.19.0-1) unstable; urgency=medium
 
   * New upstream release.

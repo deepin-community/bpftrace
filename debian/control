@@ -5,20 +5,20 @@ Maintainer: Vincent Bernat <bernat@debian.org>
 Standards-Version: 4.6.1
 Build-Depends: asciidoctor,
                bison,
-               clang-14,
+               clang-16,
                cmake,
                debhelper-compat (= 13),
                flex,
                libbpfcc-dev,
                libbpf-dev,
                libcereal-dev,
-               libclang-14-dev,
+               libclang-16-dev,
                libdw-dev,
                libelf-dev,
                libfl-dev,
                libgmock-dev,
                libgtest-dev,
-               llvm-14-dev,
+               llvm-16-dev,
                systemtap-sdt-dev,
                zlib1g-dev
 Homepage: https://github.com/iovisor/bpftrace
