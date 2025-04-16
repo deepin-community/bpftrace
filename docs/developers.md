@@ -4,6 +4,37 @@ This document features basic guidelines and recommendations on how to do
 bpftrace development. Please read it carefully before submitting pull requests
 to simplify reviewing and to speed up the merge process.
 
+## Building
+
+The project supports the following recommended build workflows. Please choose
+the one that works the best for you.
+
+### Nix build
+
+Nix is the most convenient way to build and test bpftrace. Nix will manage
+all of bpftrace's build and runtime dependencies. It also has the advantage
+of being used by the CI, so you are more likely to shake out errors before
+submitting your change and seeing the CI fail.
+
+The Nix build is documented in [nix.md](./nix.md).
+
+### Distro build
+
+The "distro build" is the more traditional way to build bpftrace. It relies on
+you installing all of bpftrace's build and runtime dependencies on your host
+and then calling into `cmake`.
+
+Please be aware that bpftrace has strict dependencies on new versions of
+`libbpf` and `bcc`. They are two of bpftrace's most important dependencies and
+we plan on tracking their upstream quite closely over time.
+
+As a result, while the distro build should work well on distros with newer
+packages, developers on distros that lag more behind (for example Debian) may
+want to consider using the Nix build. Or manually building and installing
+`bcc` and `libbpf`.
+
+The distro build is documented in [INSTALL.md](../INSTALL.md#generic-build-process).
+
 ## [Tests](../tests/README.md)
 
 Every contribution should (1) not break the existing tests and (2) introduce new
@@ -11,18 +42,8 @@ tests if relevant. See existing tests for inspiration on how to write new ones. 
 
 ## Continuous integration
 
-CI executes the above tests in a matrix of different environments:
-
-- Standard (dynamically linked) bpftrace built on NixOS with different versions
-  of LLVM.
-- bpftrace with all dependencies, except for libc, statically linked. Uses
-  Ubuntu 20.04, LLVM 12, and is linked dynamically to two different versions of
-  libc.
-- bpftrace with all dependencies, including libc, statically linked. Uses
-  Alpine and LLVM 10.
-
-The first matrix is defined in `.github/workflows/ci.yml` and the latter two in
-`.github/workflows/embedded.yml`.
+CI executes the above tests in a matrix of different LLVM versions on NixOS.
+The jobs are defined in `.github/workflows/ci.yml`.
 
 ### Running the CI
 
@@ -33,8 +54,8 @@ allow you to run the CI against your testing branches.
 ### Debugging CI failures
 
 It may often happen that tests pass on your local setup but fail in one of the
-CI environments (especially the embedded ones). In such a case, it is useful to
-reproduce the environment to debug the issue.
+CI environments. In such a case, it is useful to reproduce the environment to
+debug the issue.
 
 To reproduce the NixOS jobs (from `.github/workflows/ci.yml`):
 
@@ -54,27 +75,55 @@ $ NIX_TARGET=.#bpftrace-llvm11  \
   ./.github/include/ci.py
 ```
 
-To reproduce the embedded jobs (from `.github/workflows/embedded.yml`):
-
-See the job file (`.github/workflows/*.yml`) for exact `docker build` and
-`docker run` commands.  Note: the images use `docker/build.sh` as the
-entrypoint so you may want to override it (`--entrypoint=`) and build bpftrace
-manually in the container.
-
 ### Known issues
 
 Some tests are known to be flaky and sometimes fail in the CI environment. The
 list of known such tests:
 - runtime test `usdt.usdt probes - file based semaphore activation multi
-  process` ([#2410](https://github.com/iovisor/bpftrace/issues/2402))
+  process` ([#2410](https://github.com/bpftrace/bpftrace/issues/2402))
 
 What usually helps, is restarting the CI. This is simple on your own fork but
 requires one of the maintainers for pull requests.
 
+### Virtual machine tests (vmtests)
+
+In CI we run a subset of runtime tests under a controlled kernel by taking
+advantage of nested virtualization on CI runners. For these tests, we use
+[vmtest](https://github.com/danobi/vmtest) to manage the virtual machine.
+
+The instructions in the above "Debugging CI failures" section also work
+for the vmtest-ed runtime tests. But if you want to manually try something
+quick and dirty in a CI kernel, you can do something like the following:
+
+```bash
+$ nix develop
+
+(nix:nix-shell-env) $ vmtest -k $(nix build --print-out-paths .#kernel-6_12)/bzImage -- ./build/src/bpftrace -V
+=> bzImage
+===> Booting
+===> Setting up VM
+===> Running command
+bpftrace v0.21.0-344-g3acb
+```
+
+While we'll defer to `vmtest` documentation for full details, one neat fact
+worth pointing out is that `vmtest` will map the current running userspace into
+the VM. This means you can run binaries built on your host from inside the
+guest, eg. your development build of bpftrace.
+
+## Coding guidelines
+
+This is not about the formatting of the source code (we have `clang-format`
+for that). Rather, it's about the semantics of the code and what language
+features we try to use / avoid.
+
+Please see [coding_guidelines.md](./coding_guidelines.md) for a full treatment
+on the topic.
+
 ## Code style
 
 We use clang-format with our custom config for formatting code. This was
-[introduced](https://github.com/iovisor/bpftrace/pull/639) after a lot of code
+[introduced](https://github.com/bpftrace/bpftrace/pull/639) after a lot of code
 was already written. Instead of formatting the whole code base at once and
 breaking `git blame` we're taking an incremental approach, each new/modified bit
 of code needs to be formatted.
@@ -89,6 +138,27 @@ can be used to easily format commits, e.g. `git clang-format upstream/master`
 
 We want to avoid `fix formatting` commits. Instead every commit should be
 formatted correctly.
+
+### Comment style
+
+Strongly prefer C++-style comments for single line and block comments. C-style
+comments are still useable for nested comments within a single line, e.g. to
+leave an annotation on a specific argument or parameter. In the future, there
+may be considerations for automated documentation based on comments, but this
+is not currently done.
+
+`bpftrace` itself supports both C-style and C++-style comment blocks. There is
+currently no decision on recommended comment style, and both are used freely.
+
+## Merging pull requests
+
+Please squash + rebase all pull requests (with no merge commit). In other words,
+there should be one commit in master per pull request. This makes generating
+changelogs both trivial and precise with the least amount of noise.
+
+The exception to this is PRs with complicated changes. If this is the case and
+the commits are well structured, a rebase + merge (no merge commit) is acceptable.
+The rule of thumb is the commit titles should make sense in a changelog.
 
 ## Changelog
 

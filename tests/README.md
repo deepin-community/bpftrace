@@ -27,22 +27,29 @@ compares it (string compare) with the expected result, a file named by the
 second argument. The `NAME` macro holds the test name,  which is `call_avg` in
 this case.
 
+These tests run as part of the normal suite of unit tests if you are running LLVM 18.
+If not, you need to install 'nix' and run these tests via this script:
+`./tests/codegen-tests.sh`.
+
 #### Updating
 
-Run `./scripts/update_codegen_tests.sh` after making codegen changes up update
-the expected LLVM IR.
+**LLVM 18**
 
-Alternatively (if you need more control over which tests are updated), if the
-test is run with `BPFTRACE_UPDATE_TESTS=1` the `test` helper will update the IR
-instead of running the tests.
+If you are running LLVM 18 or want to only update specific tests with `--gtest_filter`
+run `<builddir>/tests/bpftrace_test` with `BPFTRACE_UPDATE_TESTS=1` and the `test`
+helper will update the IR instead of running the tests.
+
+**Not LLVM 18**
+
+Run `./tests/codegen-tests.sh -u`. This updates all the codegen tests.
 
 ## Runtime tests
 
 Runtime tests will call the bpftrace executable. These are located in `tests/runtime` and are managed by a custom framework.
 
-* Run: `sudo make runtime-tests` inside your build folder or `sudo <builddir>/tests/runtime-tests.sh`
-* By default, runtime-tests will look for the executable in the build folder. You can set a value to the environment variable `BPFTRACE_RUNTIME_TEST_EXECUTABLE` to customize it
-* Use the `TEST_FILTER` environment variable (or the `--filter` arg when running `runtime_tests.sh`) to only run a subset of the tests e.g. `TEST_FILTER="uprobe.*" sudo make runtime-tests`
+* Run: `sudo make runtime_tests` inside your build directory or `sudo <builddir>/tests/runtime-tests.sh`
+* Use the `TEST_FILTER` environment variable (or the `--filter` arg when running `runtime-tests.sh`) to only run a subset of the tests e.g. `TEST_FILTER="uprobe.*" sudo make runtime-tests`
+* There are environment variables to override paths for the bpftrace executables, if necessary. See runtime-tests.sh for details.
 
 Runtime tests are grouped into "suites". A suite is usually a single file. The
 name of the file is the name of the suite.
@@ -56,20 +63,49 @@ Each runtime testcase consists of multiple directives. In no particular order:
   available placeholders. This XOR the `PROG` field is required
 * `PROG`: Run the provided bpftrace program. This directive is preferred over
   `RUN` unless you must pass flags or create a shell pipeline.  This XOR the
-  `RUN` field is required
-* `EXPECT`: The expected output. Python regular expressions are supported. This
-  field is required.
+  `RUN` field is required. Multi-line program is supported by whitespace aligning
+  subsequent lines to the beginning column of the first.
+  * Example of multi-line program:
+    ```
+    NAME multi-line
+    PROG BEGIN { printf("hello ") }
+         END { printf("world!\n") }
+    EXPECT hello world!
+    ```
+* `EXPECT`: The expected output. Performs a literal match on an entire line of
+  output. Multi-line EXPECT is supported by whitespace aligning subsequent
+  lines to the beginning column of the first (same as `PROG`).
+  * Example of multi-line EXPECT:
+    ```
+    NAME multi-line
+    PROG BEGIN { print("hello!"); print("world!") }
+    EXPECT hello!
+           world!
+    ```
+* `EXPECT_NONE`: The negation of `EXPECT`.
+* `EXPECT_REGEX`: A python regular expression to match the expected output.
+* `EXPECT_REGEX_NONE`: The negation of `EXPECT_REGEX`.
+* `EXPECT_FILE`: A file containing the expected output, matched as plain
+   text after stripping initial and final empty lines
+* `EXPECT_JSON`: A json file containing the expected output, matched after
+   converting the output and the file to a dict (thus ignoring field order).
 * `TIMEOUT`: The timeout for the testcase (in seconds). This field is required.
 * `BEFORE`: Run the command in a shell before running bpftrace. The command
-  will be terminated after testcase is over. Can be used multiple times,
-  commands will run in parallel.
+  will run while bpftrace is running and be terminated after the test case
+  finishes. Can be used multiple times, commands will run in parallel.
 * `AFTER`: Run the command in a shell after running bpftrace (after the probes
   are attached). The command will be terminated after the testcase is over.
+* `SETUP`: Run the command in a shell before the test is run. This differs from
+  the `BEFORE` directive in that setup commands are expected to exit before
+  bpftrace is executed.
 * `CLEANUP`: Run the command in a shell after test is over. This holds any
   cleanup command to free resources after test completes.
 * `MIN_KERNEL`: Skip the test unless the host's kernel version is >= the
   provided kernel version. Try not to use this directive as kernel versions may
-  be misleading (backported kernel features, for example)
+  be misleading (backported kernel features, for example).
+ `MAX_KERNEL`: Skip the test unless the host's kernel version is <= the
+  provided kernel version. Try not to use this directive as kernel versions may
+  be misleading (backported kernel features, for example).
 * `REQUIRES`: Run a command in a shell. If it succeeds, run the testcase.
   Else, skip the testcase.
 * `ENV`: Run bpftrace invocation with additional environment variables. Must be
@@ -80,6 +116,15 @@ Each runtime testcase consists of multiple directives. In no particular order:
   built in. See `bpftrace --info` and `runtime/engine/runner.py` for more
   details. Also supports negative features (by prefixing `!` before feature).
 * `WILL_FAIL`: Mark that this test case will exit uncleanly (ie exit code != 0)
+* `NEW_PIDNS`: This will execute the `BEFORE`, the bpftrace (`RUN` or `PROG`),
+  and the `AFTER` commands in a new pid namespace that mounts proc. At least one
+  `BEFORE` is required.
+* `SKIP_IF_ENV_HAS`: Skip test case if specified environment variable is found
+  and matches value provided. Accepted format is KEY=VALUE. Only a single key/value
+  pair per test is accepted.
+
+One or more [`EXPECT`, `EXPECT_NONE`, `EXPECT_REGEX`, `EXPECT_REGEX_NONE`] or
+a single [`EXPECT_FILE`, `EXPECT_JSON`] is required.
 
 If you need to run a test program to probe (eg, uprobe/USDT), you can use the
 `BEFORE` clause. The test scripts will wait for the test program to have a pid.
@@ -102,14 +147,13 @@ not known until test time. The following runtime variables are available for the
 `RUN` directive:
 
 * `{{BPFTRACE}}`: Path to bpftrace executable
-* `{{BPFTRACE_AOTRT}}`: Path to bpftrace ahead-of-time runtime executable
 * `{{BEFORE_PID}}`: Process ID of the process in `BEFORE` directive
 
 ### Test programs
 
-You can add test programs for your runtime tests by placing a `.c` file corresponding to your test program in `tests/testprogs`.
+You can add test programs for your runtime tests by placing a `.c` or `.cpp` file corresponding to your test program in `tests/testprogs`.
 
-You can add test libraries for your runtime tests by placing a `.c` file corresponding to your test library in `tests/testlibs`.
+You can add test libraries for your runtime tests by placing a `.c` or `.cpp` file corresponding to your test library in `tests/testlibs`.
 
 The test file `tests/testprogs/my_test.c` will result in an executable that you can call and probe in your runtime test at `./testprogs/my_test`
 

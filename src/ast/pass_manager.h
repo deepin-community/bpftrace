@@ -1,7 +1,6 @@
 #pragma once
 
 #include <functional>
-#include <memory>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -13,20 +12,18 @@ class BPFtrace;
 
 namespace ast {
 
-class Node;
+class ASTContext;
+class Program;
 class SemanticAnalyser;
 class Pass;
 
-/**
-   Result of a pass run
- */
-class PassResult
-{
+// Result of a pass run
+class PassResult {
 public:
   static PassResult Error(const std::string &pass);
   static PassResult Error(const std::string &pass, int code);
   static PassResult Error(const std::string &pass, const std::string &msg);
-  static PassResult Success(Node *root = nullptr);
+  static PassResult Success();
 
   // Ok returns whether the pass was successful or not
   bool Ok() const
@@ -44,18 +41,11 @@ public:
     return errcode_;
   }
 
-  /**
-     Return the pass in which the failure occurred
-   */
+  // Return the pass in which the failure occurred
   const std::optional<std::string> GetErrorPass()
   {
     return errpass_;
   }
-
-  Node *Root() const
-  {
-    return root_;
-  };
 
 private:
   PassResult(const std::string &pass) : success_(false), errpass_(pass)
@@ -77,7 +67,7 @@ private:
   {
   }
 
-  PassResult(Node *root) : success_(true), root_(root)
+  PassResult() : success_(true)
   {
   }
 
@@ -85,38 +75,32 @@ private:
   std::optional<std::string> errpass_;
   std::optional<int> errcode_;
   std::optional<std::string> errmsg_;
-  Node *root_ = nullptr;
 };
 
-/**
-   Context/config for passes
+// Context/config for passes
+//
+// Note: Most state should end up in the BPFtrace class instead of here
 
-   Note: Most state should end up in the BPFtrace class instead of here
-*/
-
-struct PassContext
-{
+struct PassContext {
 public:
-  PassContext(BPFtrace &b) : b(b){};
+  PassContext(BPFtrace &b, ASTContext &ast_ctx) : b(b), ast_ctx(ast_ctx) {};
   BPFtrace &b;
+  ASTContext &ast_ctx;
 };
 
-using PassFPtr = std::function<PassResult(Node &, PassContext &)>;
+using PassFPtr = std::function<PassResult(PassContext &)>;
 
-/*
-  Base pass
-*/
-class Pass
-{
+// Base pass
+class Pass {
 public:
   Pass() = delete;
-  Pass(std::string name, PassFPtr fn) : fn_(fn), name(name){};
+  Pass(std::string name, PassFPtr fn) : fn_(fn), name(name) {};
 
   virtual ~Pass() = default;
 
-  PassResult Run(Node &root, PassContext &ctx)
+  PassResult Run(PassContext &ctx)
   {
-    return fn_(root, ctx);
+    return fn_(ctx);
   };
 
 private:
@@ -126,13 +110,12 @@ public:
   std::string name;
 };
 
-class PassManager
-{
+class PassManager {
 public:
   PassManager() = default;
 
   void AddPass(Pass p);
-  [[nodiscard]] PassResult Run(std::unique_ptr<Node> n, PassContext &ctx);
+  [[nodiscard]] PassResult Run(PassContext &ctx);
 
 private:
   std::vector<Pass> passes_;

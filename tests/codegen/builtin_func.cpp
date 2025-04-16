@@ -4,9 +4,14 @@ namespace bpftrace {
 namespace test {
 namespace codegen {
 
-TEST(codegen, builtin_func)
+TEST(codegen, builtin_func_kprobe)
 {
   test("kprobe:f { @x = func }", NAME);
+}
+
+TEST(codegen, builtin_func_kretprobe)
+{
+  test("kretprobe:f { @x = func }", NAME);
 }
 
 TEST(codegen, builtin_func_uprobe)
@@ -14,9 +19,14 @@ TEST(codegen, builtin_func_uprobe)
   test("uprobe:/bin/sh:f { @x = func }", NAME);
 }
 
-TEST(codegen, builtin_func_kfunc)
+TEST(codegen, builtin_func_uretprobe)
 {
-  test("kfunc:f { @x = func }", NAME);
+  test("uretprobe:/bin/sh:f { @x = func }", NAME);
+}
+
+TEST(codegen, builtin_func_fentry)
+{
+  test("fentry:f { @x = func }", NAME);
 }
 
 } // namespace codegen

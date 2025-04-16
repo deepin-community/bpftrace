@@ -1,8 +1,69 @@
-bpftrace (0.19.0-1deepin1) unstable; urgency=medium
+bpftrace (0.23.1-1) unstable; urgency=medium
 
-  * Modify llvm-14 to llvm-16
+  * New upstream release.
 
- -- bluesky <chenchongbiao@deepin.org>  Thu, 01 Feb 2024 09:45:21 +0800
+ -- Vincent Bernat <bernat@debian.org>  Sun, 13 Apr 2025 17:46:24 +0200
+
+bpftrace (0.22.1-1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Vincent Bernat <bernat@debian.org>  Fri, 17 Jan 2025 22:38:09 +0100
+
+bpftrace (0.21.3-1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Vincent Bernat <bernat@debian.org>  Sun, 22 Dec 2024 18:43:30 +0100
+
+bpftrace (0.21.2-2) unstable; urgency=medium
+
+  * d/control: build-depends on unversioned clang. Closes: #1084067.
+  * d/rules: static link with libbfd. Closes: #1008727.
+  * d/patches: add upstream patch to workaround compilation error.
+  * d/patches: add upstream patch for LLVM 19 support.
+  * d/rules: disable dh_dwz.
+
+ -- Vincent Bernat <bernat@debian.org>  Sat, 12 Oct 2024 21:08:39 +0200
+
+bpftrace (0.21.2-1) unstable; urgency=medium
+
+  * New upstream release.
+  * d/copyright: fix src/resources/*.h entry.
+
+ -- Vincent Bernat <bernat@debian.org>  Sun, 21 Jul 2024 16:41:16 +0200
+
+bpftrace (0.21.0-1) unstable; urgency=medium
+
+  * New upstream release.
+    Fix CVE-2024-2313. Closes: #1071748.
+
+ -- Vincent Bernat <bernat@debian.org>  Fri, 21 Jun 2024 20:47:59 +0200
+
+bpftrace (0.20.2-1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Vincent Bernat <bernat@debian.org>  Sat, 09 Mar 2024 13:39:46 +0100
+
+bpftrace (0.20.1-1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Vincent Bernat <bernat@debian.org>  Tue, 30 Jan 2024 06:46:40 +0100
+
+bpftrace (0.20.0-1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Vincent Bernat <bernat@debian.org>  Wed, 24 Jan 2024 22:50:01 +0100
+
+bpftrace (0.19.1-1) unstable; urgency=medium
+
+  * New upstream release.
+  * d/control: build-Depends on LLVM 17. Closes: #1061210.
+
+ -- Vincent Bernat <bernat@debian.org>  Sat, 20 Jan 2024 22:52:06 +0100
 
 bpftrace (0.19.0-1) unstable; urgency=medium
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <ostream>
 #include <sstream>
 #include <vector>
@@ -10,10 +11,9 @@
 namespace bpftrace {
 namespace ast {
 
-class AttachPointParser
-{
+class AttachPointParser {
 public:
-  AttachPointParser(Program *root,
+  AttachPointParser(ASTContext &ctx,
                     BPFtrace &bpftrace,
                     std::ostream &sink,
                     bool listing);
@@ -21,27 +21,19 @@ public:
   int parse();
 
 private:
-  enum State
-  {
-    OK = 0,
-    INVALID,
-    NEW_APS,
-    SKIP
-  };
+  enum State { OK = 0, INVALID, NEW_APS, SKIP };
 
   State parse_attachpoint(AttachPoint &ap);
-  /*
-   * This method splits an attach point definition into arguments,
-   * where arguments are separated by `:`. The exception is `:`s inside
-   * of quoted strings, which we must treat as a literal.
-   *
-   * This method also resolves positional parameters. Positional params
-   * may be escaped with double quotes.
-   *
-   * Note that this function assumes the raw string is generally well
-   * formed. More specifically, that there is no unescaped whitespace
-   * and no unmatched quotes.
-   */
+  // This method splits an attach point definition into arguments,
+  // where arguments are separated by `:`. The exception is `:`s inside
+  // of quoted strings, which we must treat as a literal.
+  //
+  // This method also resolves positional parameters. Positional params
+  // may be escaped with double quotes.
+  //
+  // Note that this function assumes the raw string is generally well
+  // formed. More specifically, that there is no unescaped whitespace
+  // and no unmatched quotes.
   State lex_attachpoint(const AttachPoint &ap);
 
   State special_parser();
@@ -56,14 +48,16 @@ private:
   State software_parser();
   State hardware_parser();
   State watchpoint_parser(bool async = false);
-  State kfunc_parser();
+  State fentry_parser();
   State iter_parser();
   State raw_tracepoint_parser();
 
+  State argument_count_error(int expected,
+                             std::optional<int> expected2 = std::nullopt);
   std::optional<uint64_t> stoull(const std::string &str);
   std::optional<int64_t> stoll(const std::string &str);
 
-  Program *root_{ nullptr }; // Non-owning pointer
+  ASTContext &ctx_;
   BPFtrace &bpftrace_;
   std::ostream &sink_;
   AttachPoint *ap_{ nullptr }; // Non-owning pointer

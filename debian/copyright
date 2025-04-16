@@ -16,7 +16,7 @@ Files: cmake/FindLibElf.cmake
 Copyright: Copyright (c) 2008 Bernhard Walle <bernhard.walle@gmx.de>
 License: BSD-3-clause
 
-Files: resources/*.h
+Files: src/resources/*.h
 Copyright: Copyright (c) 2014 Chandler Carruth
            Copyright (c) 2009 Chris Lattner
            Copyright (c) 2008 Eli Friedman

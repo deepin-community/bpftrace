@@ -1,8 +1,12 @@
 # The bpftrace One-Liner Tutorial
 
-This teaches you bpftrace for Linux in 12 easy lessons, where each lesson is a one-liner you can try running. This series of one-liners introduces concepts which are summarized as bullet points. For a full reference to bpftrace, see the [Man page](man/adoc/bpftrace.adoc)
+This teaches you bpftrace for Linux in 12 easy lessons, where each lesson is a one-liner you can try running. This series of one-liners introduces concepts which are summarized as bullet points. For a full reference to bpftrace, see the [Man page](../man/adoc/bpftrace.adoc)
 
 Contributed by Brendan Gregg, Netflix (2018), based on his FreeBSD [DTrace Tutorial](https://wiki.freebsd.org/DTrace/Tutorial).
+
+Note: bpftrace 0.19 changed the way probe arguments are accessed (using
+`args.xxx` instead of `args->xxx`). If you are using an older version of
+bpftrace, you will need to use `args->xxx` in the below examples.
 
 # Lesson 1. Listing Probes
 
@@ -130,7 +134,7 @@ Summarize read() bytes as a linear histogram, and traced using kernel dynamic tr
 # Lesson 7. Timing read()s
 
 ```
-# bpftrace -e 'kprobe:vfs_read { @start[tid] = nsecs; } kretprobe:vfs_read /@start[tid]/ { @ns[comm] = hist(nsecs - @start[tid]); delete(@start[tid]); }'
+# bpftrace -e 'kprobe:vfs_read { @start[tid] = nsecs; } kretprobe:vfs_read /@start[tid]/ { @ns[comm] = hist(nsecs - @start[tid]); delete(@start, tid); }'
 Attaching 2 probes...
 
 [...]
@@ -164,7 +168,7 @@ Summarize the time spent in read(), in nanoseconds, as a histogram, by process n
 - nsecs: Nanoseconds since boot. This is a high resolution timestamp counter than can be used to time events.
 - /@start[tid]/: This filter checks that the start time was seen and recorded. Without this filter, this program may be launched during a read and only catch the end, resulting in a time calculation of now - zero, instead of now - start.
 
-- delete(@start[tid]): this frees the variable.
+- delete(@start, tid): this frees the variable.
 
 # Lesson 8. Count Process-Level Events
 
@@ -296,8 +300,10 @@ The context of this probe is important: this fires when the I/O is issued to the
 
 ```
 # cat path.bt
+#ifndef BPFTRACE_HAVE_BTF
 #include <linux/path.h>
 #include <linux/dcache.h>
+#endif
 
 kprobe:vfs_open
 {
@@ -317,8 +323,8 @@ This uses kernel dynamic tracing of the vfs_open() function, which has a (struct
 - kprobe: As mentioned earlier, this is the kernel dynamic tracing probe type, which traces the entry of kernel functions (use kretprobe to trace their returns).
 - `arg0` is a builtin variable containing the first probe argument, the meaning of which is defined by the probe type. For `kprobe`, it is the first argument to the function. Other arguments can be accessed as arg1, ..., argN.
 - `((struct path *)arg0)->dentry->d_name.name`: this casts `arg0` as `struct path *`, then dereferences dentry, etc.
-- #include: these were necessary to include struct definitions for path and dentry.
+- #include: these are necessary to include struct definitions for path and dentry on systems where the kernel was built without BTF  (BPF Type Format) data.
 
-The kernel struct support is the same as bcc, making use of kernel headers. This means that many structs are available, but not everything, and sometimes it might be necessary to manually include a struct. For an example of this, see the [dcsnoop tool](../tools/dcsnoop.bt), which includes a portion of struct nameidata manually as it wasn't in the available headers. If the kernel has BTF (BPF Type Format) data, all kernel structs are always available.
+The kernel struct support is the same as bcc, making use of kernel headers. This means that many structs are available, but not everything, and sometimes it might be necessary to manually include a struct. For an example of this, see the [dcsnoop tool](../tools/dcsnoop.bt), which includes a portion of struct nameidata manually as it wasn't in the available headers. If the kernel has BTF data, all kernel structs are always available.
 
-At this point you understand much of bpftrace, and can begin to use and write powerful one-liners. See the [Reference Guide](reference_guide.md) for more capabilities.
+At this point you understand much of bpftrace, and can begin to use and write powerful one-liners. See the [Manual](../man/adoc/bpftrace.adoc) for more capabilities.

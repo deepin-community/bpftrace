@@ -4,12 +4,12 @@
 
 #include <cstdio>
 #include <fcntl.h>
+#include <fstream>
 #include <stdexcept>
 
 #include "data/dwarf_data.h"
 
-class test_dwarf : public ::testing::Test
-{
+class test_dwarf : public ::testing::Test {
 protected:
   static void SetUpTestSuite()
   {
@@ -33,4 +33,5 @@ protected:
   }
 
   static constexpr const char *bin_ = "/tmp/bpftrace-test-dwarf-data";
+  static constexpr const char *cxx_bin_ = dwarf_data_cxx_path;
 };

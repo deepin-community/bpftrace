@@ -1,35 +1,37 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
-#include <time.h>
+#include <ctime>
 
 #include "child.h"
 #include "procmon.h"
 
 #include "childhelper.h"
+#include "utils.h"
 
-namespace bpftrace {
-namespace test {
-namespace procmon {
+namespace bpftrace::test::procmon {
 
 using ::testing::HasSubstr;
 
 TEST(procmon, no_such_proc)
 {
-  try
-  {
+  try {
+    // NOLINTNEXTLINE(bugprone-unused-raii)
     ProcMon(1 << 21);
     FAIL();
-  }
-  catch (const std::runtime_error &e)
-  {
+  } catch (const std::runtime_error &e) {
     EXPECT_THAT(e.what(), HasSubstr("No such process"));
   }
 }
 
 TEST(procmon, child_terminates)
 {
-  auto child = getChild("/bin/ls");
+  std::error_code ec;
+  auto self = std::filesystem::read_symlink("/proc/self/exe", ec);
+  ASSERT_FALSE(ec);
+  auto parent_dir = self.parent_path();
+  auto out = parent_dir / std::filesystem::path("testprogs/true");
+  auto child = getChild(out.c_str());
   auto procmon = std::make_unique<ProcMon>(child->pid());
   EXPECT_TRUE(procmon->is_alive());
   child->run();
@@ -39,13 +41,4 @@ TEST(procmon, child_terminates)
   EXPECT_FALSE(procmon->is_alive());
 }
 
-TEST(procmon, pid_string)
-{
-  auto child = getChild("/bin/ls");
-  auto procmon = std::make_unique<ProcMon>(std::to_string(child->pid()));
-  EXPECT_TRUE(procmon->is_alive());
-}
-
-} // namespace procmon
-} // namespace test
-} // namespace bpftrace
+} // namespace bpftrace::test::procmon

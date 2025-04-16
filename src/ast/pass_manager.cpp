@@ -5,16 +5,15 @@
 #include "ast/passes/printer.h"
 #include "bpftrace.h"
 
-namespace bpftrace {
-namespace ast {
+namespace bpftrace::ast {
 
 namespace {
-void print(Node *root, const std::string &name, std::ostream &out)
+void print(PassContext &ctx, const std::string &name, std::ostream &out)
 {
   out << "\nAST after: " << name << std::endl;
   out << "-------------------\n";
-  ast::Printer printer(out, true);
-  printer.print(root);
+  ast::Printer printer(ctx.ast_ctx, out);
+  printer.print();
   out << std::endl;
 }
 } // namespace
@@ -24,27 +23,19 @@ void PassManager::AddPass(Pass p)
   passes_.push_back(std::move(p));
 }
 
-PassResult PassManager::Run(std::unique_ptr<Node> node, PassContext &ctx)
+PassResult PassManager::Run(PassContext &ctx)
 {
-  Node *root = node.release();
-  if (bt_debug != DebugLevel::kNone)
-    print(root, "parser", std::cout);
-  for (auto &pass : passes_)
-  {
-    auto result = pass.Run(*root, ctx);
+  if (bt_debug.find(DebugStage::Ast) != bt_debug.end())
+    print(ctx, "parser", std::cout);
+  for (auto &pass : passes_) {
+    auto result = pass.Run(ctx);
+    if (bt_debug.find(DebugStage::Ast) != bt_debug.end())
+      print(ctx, pass.name, std::cout);
+
     if (!result.Ok())
       return result;
-
-    if (result.Root())
-    {
-      delete root;
-      root = result.Root();
-    }
-
-    if (bt_debug != DebugLevel::kNone)
-      print(root, pass.name, std::cout);
   }
-  return PassResult::Success(root);
+  return PassResult::Success();
 }
 
 PassResult PassResult::Error(const std::string &pass)
@@ -62,10 +53,9 @@ PassResult PassResult::Error(const std::string &pass, const std::string &msg)
   return PassResult(pass, msg);
 }
 
-PassResult PassResult::Success(Node *root)
+PassResult PassResult::Success()
 {
-  return PassResult(root);
+  return PassResult();
 }
 
-} // namespace ast
-} // namespace bpftrace
+} // namespace bpftrace::ast
