@@ -12,8 +12,6 @@
 
 #include "format_string.h"
 #include "location.hh"
-#include "mapkey.h"
-#include "mapmanager.h"
 #include "struct.h"
 #include "types.h"
 
@@ -21,17 +19,24 @@ namespace bpftrace {
 
 class BPFtrace;
 
-struct HelperErrorInfo
-{
+struct HelperErrorInfo {
   int func_id = -1;
   location loc;
 };
 
-struct LinearHistogramArgs
-{
+struct LinearHistogramArgs {
   long min = -1;
   long max = -1;
   long step = -1;
+
+  bool operator==(const LinearHistogramArgs &other)
+  {
+    return min == other.min && max == other.max && step == other.step;
+  }
+  bool operator!=(const LinearHistogramArgs &other)
+  {
+    return !(*this == other);
+  }
 
 private:
   friend class cereal::access;
@@ -42,25 +47,30 @@ private:
   }
 };
 
+struct MapInfo {
+  SizedType key_type;
+  SizedType value_type;
+  std::optional<LinearHistogramArgs> lhist_args;
+  std::optional<int> hist_bits_arg;
+  int id = -1;
+
+private:
+  friend class cereal::access;
+  template <typename Archive>
+  void serialize(Archive &archive)
+  {
+    archive(key_type, value_type, lhist_args, hist_bits_arg, id);
+  }
+};
+
 // This class contains script-specific metadata that bpftrace's runtime needs.
 //
 // This class is intended to completely encapsulate all of a script's runtime
 // needs such as maps, async printf argument metadata, etc. An instance of this
 // class plus the actual bpf bytecode should be all that's necessary to run a
 // script on another host.
-class RequiredResources
-{
+class RequiredResources {
 public:
-  // Create maps in `maps` based on stored metadata
-  //
-  // If `fake` is set, then `FakeMap`s will be created. This is useful for:
-  // * allocating map IDs for codegen, because there's no need to prematurely
-  //   create resources that may not get used (debug mode, AOT codepath, etc.)
-  // * unit tests, as unit tests should not make system state changes
-  //
-  // Returns 0 on success, number of maps that failed to be created otherwise
-  int create_maps(BPFtrace &bpftrace, bool fake);
-
   // `save_state()` serializes `RequiredResources` and writes results into
   // `out`. `load_state()` does the reverse: takes serialized data and loads it
   // into the current instance.
@@ -75,38 +85,54 @@ public:
   void load_state(const uint8_t *ptr, size_t len);
 
   // Async argument metadata
+  std::vector<std::tuple<FormatString, std::vector<Field>>> printf_args;
   std::vector<std::tuple<FormatString, std::vector<Field>>> system_args;
-  // mapped_printf_args stores seq_printf, debugf arguments
-  std::vector<std::tuple<FormatString, std::vector<Field>>> mapped_printf_args;
-  // mapped_printf_ids stores the starting indices and length of each format
-  // string in the data map of MapManager::Type::MappedPrintfData
-  std::vector<std::tuple<int, int>> mapped_printf_ids;
+  // fmt strings for BPF helpers (bpf_seq_printf, bpf_trace_printk)
+  std::vector<FormatString> bpf_print_fmts;
+  std::vector<std::tuple<FormatString, std::vector<Field>>> cat_args;
   std::vector<std::string> join_args;
   std::vector<std::string> time_args;
   std::vector<std::string> strftime_args;
   std::vector<std::string> cgroup_path_args;
-  std::vector<std::tuple<FormatString, std::vector<Field>>> cat_args;
   std::vector<SizedType> non_map_print_args;
   std::vector<std::tuple<std::string, long>> skboutput_args_;
+  // While max fmtstring args size is not used at runtime, the size
+  // calculation requires taking into account struct alignment semantics,
+  // and that is tricky enough that we want to minimize repetition of
+  // such logic in the codebase. So keep it in resource analysis
+  // rather than duplicating it in CodegenResources.
+  uint64_t max_fmtstring_args_size = 0;
+
+  // Required for sizing of tuple scratch buffer
+  size_t tuple_buffers = 0;
+  size_t max_tuple_size = 0;
+
+  // Required for sizing of string scratch buffer
+  size_t str_buffers = 0;
+
+  // Required for sizing of map value scratch buffers
+  size_t read_map_value_buffers = 0;
+  size_t max_read_map_value_size = 0;
+  size_t max_write_map_value_size = 0;
+
+  // Required for sizing of variable scratch buffers
+  size_t variable_buffers = 0;
+  size_t max_variable_size = 0;
+
+  // Required for sizing of map key scratch buffers
+  size_t map_key_buffers = 0;
+  size_t max_map_key_size = 0;
 
   // Async argument metadata that codegen creates. Ideally ResourceAnalyser
   // pass should be collecting this, but it's complex to move the logic.
   //
   // Don't add more async arguments here!.
   std::unordered_map<int64_t, struct HelperErrorInfo> helper_error_info;
-  // `printf_args` is created here but the field offsets are fixed up
-  // by codegen -- only codegen knows data layout to compute offsets
-  std::vector<std::tuple<FormatString, std::vector<Field>>> printf_args;
   std::vector<std::string> probe_ids;
 
   // Map metadata
-  std::map<std::string, SizedType> map_vals;
-  std::map<std::string, LinearHistogramArgs> lhist_args;
-  std::map<std::string, MapKey> map_keys;
-  std::unordered_set<StackType> stackid_maps;
-  bool needs_join_map = false;
-  bool needs_elapsed_map = false;
-  bool needs_data_map = false;
+  std::map<std::string, MapInfo> maps_info;
+  std::unordered_set<bpftrace::globalvars::GlobalVar> needed_global_vars;
   bool needs_perf_event_map = false;
 
   // Probe metadata
@@ -114,27 +140,19 @@ public:
   // Probe metadata that codegen creates. Ideally ResourceAnalyser pass should
   // be collecting this, but it's complex to move the logic.
   std::vector<Probe> probes;
-  std::vector<Probe> special_probes;
+  std::unordered_map<std::string, Probe> special_probes;
   std::vector<Probe> watchpoint_probes;
 
   // List of probes using userspace symbol resolution
-  std::unordered_set<ast::Probe *> probes_using_usym;
+  std::unordered_set<const ast::Probe *> probes_using_usym;
 
 private:
-  template <typename T>
-  int create_maps_impl(BPFtrace &bpftrace, bool fake);
-  template <typename T>
-  std::unique_ptr<T> prepareFormatStringDataMap(
-      const std::vector<std::tuple<FormatString, std::vector<Field>>> &args,
-      int *ret);
-
   friend class cereal::access;
   template <typename Archive>
   void serialize(Archive &archive)
   {
     archive(system_args,
-            mapped_printf_args,
-            mapped_printf_ids,
+            bpf_print_fmts,
             join_args,
             time_args,
             strftime_args,
@@ -144,13 +162,8 @@ private:
             // helper_error_info,
             printf_args,
             probe_ids,
-            map_vals,
-            lhist_args,
-            map_keys,
-            stackid_maps,
-            needs_join_map,
-            needs_elapsed_map,
-            needs_data_map,
+            maps_info,
+            needed_global_vars,
             needs_perf_event_map,
             probes,
             special_probes);

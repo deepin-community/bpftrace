@@ -1,74 +1,73 @@
 NAME user_supplied_c_def_using_btf
 PROG struct foo { struct task_struct t; } BEGIN { exit(); }
 EXPECT Attaching 1 probe...
-TIMEOUT 5
 REQUIRES_FEATURE btf
 
 NAME tracepoint_pointer_type_resolution
 PROG tracepoint:syscalls:sys_enter_nanosleep { args.rqtp->tv_sec; exit(); }
 EXPECT Attaching 1 probe...
-TIMEOUT 5
 REQUIRES_FEATURE btf
 
 NAME tracepoint_nested_pointer_type_resolution
 PROG tracepoint:napi:napi_poll { args.napi->dev->name; exit(); }
 EXPECT Attaching 1 probe...
-TIMEOUT 5
 REQUIRES_FEATURE btf
 
 NAME enum_value_reference
 PROG BEGIN { printf("%d\n", sizeof(BTF_VAR_STATIC)); exit(); }
-EXPECT ^8$
-TIMEOUT 5
+EXPECT_REGEX ^8$
 REQUIRES_FEATURE btf
 
 NAME redefine_btf_type
 PROG struct task_struct { int x; } BEGIN { printf("%d\n", curtask->x); exit() }
-EXPECT -?[0-9][0-9]*
-TIMEOUT 5
+EXPECT_REGEX -?[0-9][0-9]*
 REQUIRES_FEATURE btf
 
 NAME redefine_btf_type_missing_def
 PROG struct task_struct { struct thread_info x; } BEGIN { printf("%d\n", curtask->x.status); }
-EXPECT error:.*'struct thread_info'
-TIMEOUT 5
+EXPECT_REGEX error:.*'struct thread_info'
 REQUIRES_FEATURE btf
 WILL_FAIL
 
 NAME kernel_module_attach
-RUN {{BPFTRACE}} -e 'kfunc:nft_trans_alloc_gfp { printf("hit\n"); exit(); }'
-AFTER /usr/sbin/nft add table bpftrace
+RUN {{BPFTRACE}} -e 'fentry:nf_tables_newtable { printf("hit\n"); exit(); }'
+AFTER nft add table bpftrace
 EXPECT hit
-TIMEOUT 5
-REQUIRES_FEATURE kfunc
+REQUIRES_FEATURE fentry
 REQUIRES lsmod | grep '^nf_tables'
-REQUIRES /usr/sbin/nft --help
+REQUIRES nft --help
+CLEANUP nft delete table bpftrace
+
+NAME kernel_module_attach_wildcard
+RUN {{BPFTRACE}} -e 'fentry:nf_table*:nf_tables_newtable { printf("hit\n"); exit(); }'
+AFTER nft add table bpftrace
+EXPECT hit
+REQUIRES_FEATURE fentry
+REQUIRES lsmod | grep '^nf_tables'
+REQUIRES nft --help
 CLEANUP nft delete table bpftrace
 
 NAME kernel_module_args
-RUN {{BPFTRACE}} -e 'kfunc:nft_trans_alloc_gfp { printf("size: %d\n", args.size); exit(); }'
-AFTER /usr/sbin/nft add table bpftrace
-EXPECT size: [0-9]+
-TIMEOUT 5
-REQUIRES_FEATURE kfunc
+RUN {{BPFTRACE}} -e 'fentry:nf_tables_newtable { printf("skb: %p\n", args.skb); exit(); }'
+AFTER nft add table bpftrace
+EXPECT_REGEX ^skb: 0x[a-f0-9]+$
+REQUIRES_FEATURE fentry
 REQUIRES lsmod | grep '^nf_tables'
-REQUIRES /usr/sbin/nft --help
+REQUIRES nft --help
 CLEANUP nft delete table bpftrace
 
 NAME kernel_module_types
-RUN {{BPFTRACE}} -e 'kfunc:nft_trans_alloc_gfp { printf("portid: %d\n", args.ctx->portid); exit(); }'
-AFTER /usr/sbin/nft add table bpftrace
-EXPECT portid: [0-9]+
-TIMEOUT 5
-REQUIRES_FEATURE kfunc
+RUN {{BPFTRACE}} -e 'fentry:nf_tables_newtable { printf("skb len: %d\n", args.skb->len); exit(); }'
+AFTER nft add table bpftrace
+EXPECT_REGEX ^skb len: [0-9]+$
+REQUIRES_FEATURE fentry
 REQUIRES lsmod | grep '^nf_tables'
-REQUIRES /usr/sbin/nft --help
+REQUIRES nft --help
 CLEANUP nft delete table bpftrace
 
 NAME kernel_module_tracepoint
 PROG tracepoint:xfs:xfs_setfilesize { print(args.offset) } i:ms:1 { exit(); }
 EXPECT Attaching 2 probes...
-TIMEOUT 5
 REQUIRES_FEATURE btf
 REQUIRES lsmod | grep "^xfs"
 
@@ -76,8 +75,21 @@ REQUIRES lsmod | grep "^xfs"
 # 'vmlinux' BTF and fully defined in 'kvm' BTF.
 # This tests checks that the correct BTF definition is pulled from 'kvm'.
 NAME kernel_module_type_fwd
-PROG kfunc:kvm:x86_emulate_insn { printf("%d\n", args.ctxt->mode); exit(); }
+PROG fentry:kvm:x86_emulate_insn { printf("%d\n", args.ctxt->mode); exit(); }
 EXPECT Attaching 1 probe...
 TIMEOUT 2
-REQUIRES_FEATURE kfunc
+REQUIRES_FEATURE fentry
 REQUIRES lsmod | grep '^kvm'
+
+NAME kprobe_kernel_module_type_fwd
+PROG kprobe:kvm:x86_emulate_insn { $ctxt = (struct x86_emulate_ctxt *) arg0; printf("%d\n", $ctxt->mode); exit(); }
+EXPECT Attaching 1 probe...
+TIMEOUT 2
+REQUIRES lsmod | grep '^kvm'
+
+# This test only matters on Clang-built kernels, which support btf_type_tag
+# and require special handling in bpftrace
+NAME btf_type_tag_access
+PROG BEGIN { printf("SUCCESS %d\n", curtask->parent->pid); exit() }
+EXPECT_REGEX SUCCESS [0-9][0-9]*
+REQUIRES_FEATURE btf

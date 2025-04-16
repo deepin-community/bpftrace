@@ -4,14 +4,13 @@
 #include "ast/passes/field_analyser.h"
 #include "ast/passes/portability_analyser.h"
 #include "ast/passes/semantic_analyser.h"
-#include "btf_common.h"
 #include "clang_parser.h"
 #include "driver.h"
 #include "mocks.h"
 
-namespace bpftrace {
-namespace test {
-namespace portability_analyser {
+namespace bpftrace::test::portability_analyser {
+
+#include "btf_common.h"
 
 using ::testing::_;
 
@@ -24,25 +23,24 @@ void test(BPFtrace &bpftrace, const std::string &input, int expected_result = 0)
 
   ASSERT_EQ(driver.parse_str(input), 0);
 
-  ast::FieldAnalyser fields(driver.root.get(), bpftrace, out);
+  ast::FieldAnalyser fields(driver.ctx, bpftrace, out);
   ASSERT_EQ(fields.analyse(), 0) << msg.str() << out.str();
 
   ClangParser clang;
-  ASSERT_TRUE(clang.parse(driver.root.get(), bpftrace));
+  ASSERT_TRUE(clang.parse(driver.ctx.root, bpftrace));
 
   ASSERT_EQ(driver.parse_str(input), 0);
   out.str("");
-  ast::SemanticAnalyser semantics(driver.root.get(), bpftrace, out, false);
+  ast::SemanticAnalyser semantics(driver.ctx, bpftrace, out, false);
   ASSERT_EQ(semantics.analyse(), 0) << msg.str() << out.str();
 
-  ast::PortabilityAnalyser portability(driver.root.get(), out);
+  ast::PortabilityAnalyser portability(driver.ctx, out);
   EXPECT_EQ(portability.analyse(), expected_result) << msg.str() << out.str();
 }
 
 void test(const std::string &input, int expected_result = 0)
 {
   auto bpftrace = get_mock_bpftrace();
-  bpftrace->feature_ = std::make_unique<MockBPFfeature>(true);
   test(*bpftrace, input, expected_result);
 }
 
@@ -60,17 +58,16 @@ TEST(portability_analyser, tracepoint_field_access)
   test("tracepoint:sched:sched_one { args->common_field }", 0);
 }
 
-class portability_analyser_btf : public test_btf
-{
-};
+class portability_analyser_btf : public test_btf {};
 
-TEST_F(portability_analyser_btf, kfunc_field_access)
+TEST_F(portability_analyser_btf, fentry_field_access)
 {
-  test("kfunc:func_1 { $x = args.a; $y = args.foo1; $z = args.foo2->f.a; }", 0);
-  test("kfunc:func_2 { args.foo1 }", 0);
-  test("kfunc:func_2, kfunc:func_3 { $x = args.foo1; }", 0);
+  test("fentry:func_1 { $x = args.a; $y = args.foo1; $z = args.foo2->f.a; }",
+       0);
+  test("fentry:func_2 { args.foo1 }", 0);
+  test("fentry:func_2, fentry:func_3 { $x = args.foo1; }", 0);
   // Backwards compatibility
-  test("kfunc:func_2 { args->foo1 }", 0);
+  test("fentry:func_2 { args->foo1 }", 0);
 }
 
 TEST(portability_analyser, positional_params_disabled)
@@ -102,6 +99,4 @@ TEST(portability_analyser, selective_probes_disabled)
   test(*bpftrace, "asyncwatchpoint:increment+arg1:4:w { 1 }", 1);
 }
 
-} // namespace portability_analyser
-} // namespace test
-} // namespace bpftrace
+} // namespace bpftrace::test::portability_analyser

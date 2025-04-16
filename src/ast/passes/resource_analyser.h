@@ -4,7 +4,7 @@
 #include <sstream>
 
 #include "ast/pass_manager.h"
-#include "ast/visitors.h"
+#include "ast/visitor.h"
 #include "required_resources.h"
 
 namespace bpftrace {
@@ -19,34 +19,47 @@ namespace ast {
 // TODO(danobi): Note that while complete resource collection in this pass is
 // the goal, there are still places where the goal is not yet realized. For
 // example the helper error metadata is still being collected during codegen.
-class ResourceAnalyser : public Visitor
-{
+class ResourceAnalyser : public Visitor<ResourceAnalyser> {
 public:
-  ResourceAnalyser(Node *root, std::ostream &out = std::cerr);
+  ResourceAnalyser(ASTContext &ctx,
+                   BPFtrace &bpftrace,
+                   std::ostream &out = std::cerr);
 
   std::optional<RequiredResources> analyse();
 
+  using Visitor<ResourceAnalyser>::visit;
+  void visit(Probe &probe);
+  void visit(Subprog &subprog);
+  void visit(Builtin &map);
+  void visit(Call &call);
+  void visit(Map &map);
+  void visit(Tuple &tuple);
+  void visit(For &f);
+  void visit(Ternary &ternary);
+  void visit(AssignMapStatement &assignment);
+  void visit(AssignVarStatement &assignment);
+  void visit(VarDeclStatement &decl);
+
 private:
-  void visit(Probe &probe) override;
-  void visit(Builtin &map) override;
-  void visit(Call &call) override;
-  void visit(Map &map) override;
-
-  // seq_printf, debugf format strings are stored head to tail in a data
-  // map. This method loads `RequiredResources::mapped_printf_ids` with the
-  // starting indicies and lengths of each format string in the data map.
-  void prepare_mapped_printf_ids();
-
   // Determines whether the given function uses userspace symbol resolution.
   // This is used later for loading the symbol table into memory.
   bool uses_usym_table(const std::string &fun);
 
+  bool exceeds_stack_limit(size_t size);
+
+  void maybe_allocate_map_key_buffer(const Map &map);
+
+  void update_map_info(Map &map);
+  void update_variable_info(Variable &var);
+
   RequiredResources resources_;
-  Node *root_;
+  BPFtrace &bpftrace_;
   std::ostream &out_;
   std::ostringstream err_;
   // Current probe we're analysing
   Probe *probe_;
+
+  int next_map_id_ = 0;
 };
 
 Pass CreateResourcePass();

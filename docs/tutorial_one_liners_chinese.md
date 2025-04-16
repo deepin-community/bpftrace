@@ -1,6 +1,6 @@
 # bpftrace一行教程
 
-该教程通过12个简单小节帮助你了解bpftrace的使用。每一小节都是一行的命令，你可以尝试运行并立刻看到运行效果。该教程系列用来介绍bpftrace的概念。关于bpftrace的完整参考，见[bpftrace手册](man/adoc/bpftrace.adoc)。
+该教程通过12个简单小节帮助你了解bpftrace的使用。每一小节都是一行的命令，你可以尝试运行并立刻看到运行效果。该教程系列用来介绍bpftrace的概念。关于bpftrace的完整参考，见[bpftrace手册](../man/adoc/bpftrace.adoc)。
 
 该教程贡献者是Brendan Gregg, Netflix (2018), 基于他的FreeBSD DTrace教程系列[DTrace Tutorial](https://wiki.freebsd.org/DTrace/Tutorial)。
 
@@ -126,7 +126,7 @@ Attaching 1 probe...
 # 7. read()调用的时间
 
 ```
-# bpftrace -e 'kprobe:vfs_read { @start[tid] = nsecs; } kretprobe:vfs_read /@start[tid]/ { @ns[comm] = hist(nsecs - @start[tid]); delete(@start[tid]); }'
+# bpftrace -e 'kprobe:vfs_read { @start[tid] = nsecs; } kretprobe:vfs_read /@start[tid]/ { @ns[comm] = hist(nsecs - @start[tid]); delete(@start, tid); }'
 Attaching 2 probes...
 
 [...]
@@ -159,7 +159,7 @@ Attaching 2 probes...
 - @start[tid]: 使用线程ID作为key。某一时刻，可能有许许多多的read调用正在进行，我们希望为每个调用记录一个起始时间戳。这要如何做到呢？我们可以为每个read调用建立一个唯一的标识符，并用它作为key进行统计。由于内核线程一次只能执行一个系统调用，我们可以使用线程ID作为上述标识符。
 - nsecs: 自系统启动到现在的纳秒数。这是一个高精度时间戳，可以用来对事件计时。
 - /@start[tid]/: 该过滤条件检查起始时间戳是否被记录。程序可能在某次read调用中途被启动，如果没有这个过滤条件，这个调用的时间会被统计为now-zero，而不是now-start。
-- delete(@start[tid]): 释放变量。
+- delete(@start, tid): 释放变量。
 
 # 8. 统计进程级别的事件
 
@@ -291,8 +291,10 @@ Attaching 1 probe...
 
 ```
 # cat path.bt
+#ifndef BPFTRACE_HAVE_BTF
 #include <linux/path.h>
 #include <linux/dcache.h>
+#endif
 
 kprobe:vfs_open
 {
@@ -313,8 +315,8 @@ open path: retrans_time_ms
 - kprobe: 如前面所述，这是内核动态跟踪kprobe探针类型，跟踪内核函数的调用(kretprobe探针类型跟踪内核函数返回值)。
 - `arg0` 是一个内建变量，表示探针的第一个参数，其含义由探针类型决定。对于`kprobe`类型探针，它表示函数的第一个参数。其它参数使用arg1,...,argN访问。
 - `((struct path *)arg0)->dentry->d_name.name`: 这里`arg0`作为`struct path *`并引用dentry。
-- #include: 包含必要的path和dentry类型声明的头文件。
+- #include: 在没有BTF (BPF Type Format) 的情况下,包含必要的path和dentry类型声明的头文件。
 
-bpftrace对内核结构跟踪的支持和bcc是一样的，允许使用内核头文件。这意味着大多数结构是可用的，但是并不是所有的，有时需要手动增加某些结构的声明。例如这个例子，见[dcsnoop tool](../tools/dcsnoop.bt)，包含struct nameidata的声明。倘若内核有提供BPF (BPF Type Format)数据，则所有结构都可用。
+bpftrace对内核结构跟踪的支持和bcc是一样的，允许使用内核头文件。这意味着大多数结构是可用的，但是并不是所有的，有时需要手动增加某些结构的声明。例如这个例子，见[dcsnoop tool](../tools/dcsnoop.bt)，包含struct nameidata的声明。倘若内核有提供BTF数据，则所有结构都可用。
 
-现在，你已经理解了bpftrace的大部分功能，你可以开始使用和编写强大的一行命令。查阅[参考手册](reference_guide.md)更多的功能。
+现在，你已经理解了bpftrace的大部分功能，你可以开始使用和编写强大的一行命令。查阅[使用说明书](../man/adoc/bpftrace.adoc)更多的功能。

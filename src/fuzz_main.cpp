@@ -16,7 +16,6 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "ast/passes/callback_visitor.h"
 #include "ast/passes/codegen_llvm.h"
 #include "ast/passes/field_analyser.h"
 #include "ast/passes/semantic_analyser.h"
@@ -26,8 +25,6 @@
 #include "log.h"
 #include "output.h"
 #include "tracepoint_format_parser.h"
-
-#define DEFAULT_NODE_MAX 200
 
 using namespace bpftrace;
 
@@ -48,14 +45,11 @@ int main(int argc, char* argv[])
   // Read inputs
   std::stringstream buf;
   std::string line;
-  if (argc <= 1)
-  {
+  if (argc <= 1) {
     // Input from stdin (AFL's default)
     while (std::getline(std::cin, line))
       buf << line << std::endl;
-  }
-  else
-  {
+  } else {
     // Read from file
     std::string filename(argv[1]);
     std::ifstream file(filename);
@@ -78,7 +72,6 @@ int fuzz_main(const char* data, size_t sz)
     return 1;
 
   DISABLE_LOG(DEBUG);
-  DISABLE_LOG(INFO);
   DISABLE_LOG(WARNING);
   // We can't disable error logs because some functions use a length of error
   // log to see if an error occurs. Instead, suppress error log output at each
@@ -106,25 +99,14 @@ int fuzz_main(const char* data, size_t sz)
   if (err)
     return err;
 
-  // Limit node size
-  uint64_t node_max = DEFAULT_NODE_MAX;
-  if (!get_uint64_env_var("BPFTRACE_NODE_MAX", node_max))
-    return 1;
-  uint64_t node_count = 0;
-  ast::CallbackVisitor counter(
-      [&](ast::Node* node __attribute__((unused))) { node_count += 1; });
-  driver.root->accept(counter);
-  if (node_count > node_max)
-    return 1;
-
   // Field Analyzer
-  ast::FieldAnalyser fields(driver.root.get(), bpftrace, devnull);
+  ast::FieldAnalyser fields(driver.ctx, bpftrace, devnull);
   err = fields.analyse();
   if (err)
     return err;
 
   // Tracepoint parser
-  if (TracepointFormatParser::parse(driver.root.get(), bpftrace) == false)
+  if (TracepointFormatParser::parse(driver.ctx, bpftrace) == false)
     return 1;
 
   // ClangParser
@@ -134,15 +116,14 @@ int fuzz_main(const char* data, size_t sz)
     struct utsname utsname;
     uname(&utsname);
     std::string ksrc, kobj;
-    auto kdirs = get_kernel_dirs(utsname, !bpftrace.feature_->has_btf());
+    auto kdirs = get_kernel_dirs(utsname);
     ksrc = std::get<0>(kdirs);
     kobj = std::get<1>(kdirs);
 
     if (ksrc != "")
-      extra_flags = get_kernel_cflags(utsname.machine, ksrc, kobj);
+      extra_flags = get_kernel_cflags(
+          utsname.machine, ksrc, kobj, bpftrace.kconfig);
   }
-  extra_flags.push_back("-include");
-  extra_flags.push_back(CLANG_WORKAROUNDS_H);
   if (!clang.parse(driver.root.get(), bpftrace, extra_flags))
     return 1;
   err = driver.parse();
@@ -150,7 +131,7 @@ int fuzz_main(const char* data, size_t sz)
     return err;
 
   // Semantic Analyzer
-  ast::SemanticAnalyser semantics(driver.root.get(), bpftrace, devnull, false);
+  ast::SemanticAnalyser semantics(driver.ctx, bpftrace, devnull, false);
   err = semantics.analyse();
   if (err)
     return err;
@@ -165,26 +146,18 @@ int fuzz_main(const char* data, size_t sz)
     return err;
 
   // Codegen
-  ast::CodegenLLVM llvm(driver.root.get(), bpftrace);
+  ast::CodegenLLVM llvm(driver.ctx, bpftrace);
   BpfBytecode bytecode;
-  try
-  {
+  try {
     llvm.generate_ir();
     llvm.optimize();
-    bytecode = llvm.emit();
-  }
-  catch (const std::system_error& ex)
-  {
+    bytecode = llvm.emit(false);
+  } catch (const std::system_error& ex) {
     return 1;
-  }
-  catch (const std::exception& ex)
-  {
+  } catch (const std::exception& ex) {
     // failed to compile
     return 1;
   }
-
-  // for debug
-  // LOG(INFO) << "ok";
 
   return 0;
 }

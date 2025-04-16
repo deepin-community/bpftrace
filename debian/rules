@@ -3,14 +3,20 @@
 %:
 	dh $@
 
+BINUTILS_LIBDIR=/usr/lib/$(shell dpkg-architecture -qDEB_HOST_MULTIARCH)
 override_dh_auto_configure:
-	dh_auto_configure -- -DBUILD_TESTING:BOOL=OFF -DUSE_SYSTEM_BPF_BCC=1
+	dh_auto_configure -- -DBUILD_TESTING:BOOL=OFF -DUSE_SYSTEM_BPF_BCC=1 \
+	                     -DLIBBFD_LIBRARIES:FILEPATH=$(BINUTILS_LIBDIR)/libbfd.a \
+	                     -DLIBOPCODES_LIBRARIES:FILEPATH=$(BINUTILS_LIBDIR)/libopcodes.a \
+	                     -DLIBSFRAME_FOUND:BOOL=ON -DLIBZSTD_FOUND:BOOL=ON
 
 STRIP_CMD=strip --keep-symbol=BEGIN_trigger --keep-symbol=END_trigger --remove-section=.comment --remove-section=.note
 override_dh_strip:
 	dh_strip -Xbpftrace -Xbpftrace-aotrt
 	$(STRIP_CMD) debian/bpftrace/usr/bin/bpftrace
 	$(STRIP_CMD) debian/bpftrace/usr/bin/bpftrace-aotrt
+
+override_dh_dwz:
 
 override_dh_auto_install:
 	dh_auto_install

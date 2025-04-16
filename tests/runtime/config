@@ -1,0 +1,41 @@
+NAME config as env var
+RUN {{BPFTRACE}} -e 'config = { BPFTRACE_STACK_MODE=raw } uprobe:./testprogs/uprobe_test:uprobeFunction1 { printf("%s", ustack(1)); exit(); }'
+EXPECT_REGEX ^\s+[0-9a-f]+$
+AFTER ./testprogs/uprobe_test
+
+NAME config short name
+RUN {{BPFTRACE}} -e 'config = { stack_mode=raw } uprobe:./testprogs/uprobe_test:uprobeFunction1 { printf("%s", ustack(1)); exit(); }'
+EXPECT_REGEX ^\s+[0-9a-f]+$
+AFTER ./testprogs/uprobe_test
+
+NAME env var takes precedence
+RUN {{BPFTRACE}} -e 'config = { BPFTRACE_STACK_MODE=perf } uprobe:./testprogs/uprobe_test:uprobeFunction1 { printf("%s", ustack(1)); exit(); }'
+ENV BPFTRACE_STACK_MODE=raw
+EXPECT_REGEX ^\s+[0-9a-f]+$
+AFTER ./testprogs/uprobe_test
+
+NAME bad config
+RUN {{BPFTRACE}} -e 'config = { bad_config=raw } BEGIN {}'
+EXPECT stdin:1:12-23: ERROR: Unrecognized config variable: bad_config
+WILL_FAIL
+
+NAME env only config
+RUN {{BPFTRACE}} -e 'config = { debug_output=1 } BEGIN {}'
+EXPECT stdin:1:12-25: ERROR: debug_output can only be set as an environment variable
+WILL_FAIL
+
+NAME maps are printed by default
+PROG BEGIN { @["test"] = count(); exit(); }
+EXPECT @[test]: 1
+
+NAME maps can be disabled
+PROG config = { print_maps_on_exit=0 } BEGIN { @["test"] = count(); exit(); }
+EXPECT_NONE @[test]: 1
+
+NAME scalar maps are printed by default
+PROG BEGIN { @test = 1; exit(); }
+EXPECT @test: 1
+
+NAME scalar maps can be disabled
+PROG config = { print_maps_on_exit=0 } BEGIN { @test = 1; exit(); }
+EXPECT_NONE @test: 1

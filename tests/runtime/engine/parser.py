@@ -4,6 +4,7 @@ from collections import namedtuple
 import os
 import platform
 
+DEFAULT_TIMEOUT = 5
 
 class RequiredFieldError(Exception):
     pass
@@ -16,6 +17,10 @@ class UnknownFieldError(Exception):
 class InvalidFieldError(Exception):
     pass
 
+class Expect:
+  def __init__(self, expect, mode):
+    self.expect = expect
+    self.mode = mode
 
 TestStruct = namedtuple(
     'TestStruct',
@@ -23,10 +28,12 @@ TestStruct = namedtuple(
         'name',
         'run',
         'prog',
-        'expect',
+        'expects',
+        'has_exact_expect',
         'timeout',
         'befores',
         'after',
+        'setup',
         'cleanup',
         'suite',
         'kernel_min',
@@ -36,7 +43,10 @@ TestStruct = namedtuple(
         'arch',
         'feature_requirement',
         'neg_feature_requirement',
-        'will_fail'
+        'will_fail',
+        'new_pidns',
+        'skip_if_env_has',
+        'return_code',
     ],
 )
 
@@ -100,10 +110,12 @@ class TestParser(object):
         name = ''
         run = ''
         prog = ''
-        expect = ''
+        expects = []
+        has_exact_expect = False
         timeout = ''
         befores = []
         after = ''
+        setup = ''
         cleanup = ''
         kernel_min = ''
         kernel_max = ''
@@ -113,11 +125,29 @@ class TestParser(object):
         feature_requirement = set()
         neg_feature_requirement = set()
         will_fail = False
+        new_pidns = False
+        skip_if_env_has = None
+        return_code = None
+        prev_item_name = ''
 
         for item in test:
-            item_split = item.split()
+            if item[:len(prev_item_name) + 1].isspace():
+                # Whitespace at beginning of line means it continues from the
+                # previous line
+
+                # Remove the leading whitespace and the trailing newline
+                line = item[len(prev_item_name) + 1:-1]
+                if prev_item_name == 'PROG':
+                    prog += '\n' + line
+                    continue
+                elif prev_item_name in ('EXPECT', 'EXPECT_REGEX'):
+                    expects[-1].expect += '\n' + line
+                    continue
+
+            item_split = item.strip().split(maxsplit=1)
             item_name = item_split[0]
-            line = ' '.join(item_split[1:])
+            line = item_split[1] if len(item_split) > 1 else ""
+            prev_item_name = item_name
 
             if item_name == 'NAME':
                 name = line
@@ -126,13 +156,27 @@ class TestParser(object):
             elif item_name == "PROG":
                 prog = line
             elif item_name == 'EXPECT':
-                expect = line
+                expects.append(Expect(line, 'text'))
+            elif item_name == 'EXPECT_NONE':
+                expects.append(Expect(line, 'text_none'))
+            elif item_name == 'EXPECT_REGEX':
+                expects.append(Expect(line, 'regex'))
+            elif item_name == 'EXPECT_REGEX_NONE':
+                expects.append(Expect(line, 'regex_none'))
+            elif item_name == 'EXPECT_FILE':
+                has_exact_expect = True
+                expects.append(Expect(line, 'file'))
+            elif item_name == 'EXPECT_JSON':
+                has_exact_expect = True
+                expects.append(Expect(line, 'json'))
             elif item_name == 'TIMEOUT':
                 timeout = int(line.strip(' '))
             elif item_name == 'BEFORE':
                 befores.append(line)
             elif item_name == 'AFTER':
                 after = line
+            elif item_name == 'SETUP':
+                setup = line
             elif item_name == 'CLEANUP':
                 cleanup = line
             elif item_name == 'MIN_KERNEL':
@@ -151,21 +195,22 @@ class TestParser(object):
                 features = {
                     "loop",
                     "btf",
-                    "kfunc",
+                    "fentry",
                     "probe_read_kernel",
                     "dpath",
                     "uprobe_refcount",
                     "signal",
-                    "iter:task",
-                    "iter:task_file",
-                    "iter:task_vma",
+                    "iter",
                     "libpath_resolv",
                     "dwarf",
+                    "kernel_dwarf",
                     "aot",
                     "kprobe_multi",
+                    "uprobe_multi",
                     "skboutput",
                     "get_tai_ns",
                     "get_func_ip",
+                    "jiffies64",
                 }
 
                 for f in line.split(" "):
@@ -180,6 +225,13 @@ class TestParser(object):
                     raise UnknownFieldError('%s is invalid for REQUIRES_FEATURE. Suite: %s' % (','.join(unknown), test_suite))
             elif item_name == "WILL_FAIL":
                 will_fail = True
+            elif item_name == "NEW_PIDNS":
+                new_pidns = True
+            elif item_name == "SKIP_IF_ENV_HAS":
+                parts = line.split("=")
+                skip_if_env_has = (parts[0], parts[1])
+            elif item_name == "RETURN_CODE":
+                return_code = int(line.strip(' '))
             else:
                 raise UnknownFieldError('Field %s is unknown. Suite: %s' % (item_name, test_suite))
 
@@ -189,19 +241,26 @@ class TestParser(object):
             raise RequiredFieldError('Test RUN or PROG is required. Suite: ' + test_suite)
         elif run != '' and prog != '':
             raise InvalidFieldError('Test RUN and PROG both specified. Suit: ' + test_suite)
-        elif expect == '':
-            raise RequiredFieldError('Test EXPECT is required. Suite: ' + test_suite)
+        elif len(expects) == 0 and return_code is None:
+            raise RequiredFieldError('At least one test EXPECT (or variation) is required. Suite: ' + test_suite)
+        elif len(expects) > 1 and has_exact_expect:
+            raise InvalidFieldError('EXPECT_JSON or EXPECT_FILE can not be used with other EXPECTs. Suite: ' + test_suite)
         elif timeout == '':
-            raise RequiredFieldError('Test TIMEOUT is required. Suite: ' + test_suite)
+            timeout = DEFAULT_TIMEOUT
+
+        if return_code is None:
+            return_code = 0
 
         return TestStruct(
             name,
             run,
             prog,
-            expect,
+            expects,
+            has_exact_expect,
             timeout,
             befores,
             after,
+            setup,
             cleanup,
             test_suite,
             kernel_min,
@@ -211,4 +270,8 @@ class TestParser(object):
             arch,
             feature_requirement,
             neg_feature_requirement,
-            will_fail)
+            will_fail,
+            new_pidns,
+            skip_if_env_has,
+            return_code,
+        )
