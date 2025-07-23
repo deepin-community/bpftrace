@@ -1,3 +1,9 @@
+bpftrace (0.23.2-1) unstable; urgency=medium
+
+  * New upstream release.
+
+ -- Vincent Bernat <bernat@debian.org>  Sat, 19 Apr 2025 17:36:34 +0200
+
 bpftrace (0.23.1-1) unstable; urgency=medium
 
   * New upstream release.
