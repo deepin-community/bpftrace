@@ -1,3 +1,18 @@
+bpftrace (0.23.1-1deepin1) unstable; urgency=medium
+
+  * Add sw64 (Sunway) architecture support
+    - Add src/arch/sw64.cpp with register definitions for the Sunway sw64
+      architecture, based on the Linux kernel pt_regs structure
+    - Update src/arch/CMakeLists.txt to recognize sw_64 as the cmake
+      system processor for the sw64 architecture
+    - Fixes build failure on sw64 systems:
+      "CMake Error at src/arch/CMakeLists.txt:18 (message):
+       Unsupported architecture: sw_64"
+    - Uses r16-r21 (a0-a5) for function arguments (calling convention),
+      r0 (v0) as return value, r30 (sp) as stack pointer
+
+ -- lichenggang <lichenggang@uniontech.com>  Mon, 13 Jul 2026 17:37:11 +0800
+
 bpftrace (0.23.1-1) unstable; urgency=medium
 
   * New upstream release.
